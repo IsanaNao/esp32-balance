@@ -5,20 +5,21 @@ ESP32 固件目录。
 - **开发环境**：Arduino IDE（Arduino-ESP32 core）。云端 CI 用同一个 core 的 `arduino-cli` 编译，和本地 IDE 结果一致
 - **首块硬件**：ESP32-WROOM-32（Arduino IDE 里选 **ESP32 Dev Module**，FQBN `esp32:esp32:esp32`）
 - **屏幕**：待定
-- 工程结构按 Arduino IDE 规则：`.ino` 文件与所在文件夹同名，例如 `firmware/balance_display/balance_display.ino`；WiFi 密码等私密配置放 `secrets.h`（已被 .gitignore 排除）
+- 工程结构按 Arduino IDE 规则：`.ino` 文件与所在文件夹同名，例如 `firmware/balance_display/balance_display.ino`
+- 私密配置放 `secrets.h`（已被 .gitignore 排除）：**服务器地址**、开发期写死的 WiFi 密码 / 设备 Token。仓库里只提交 `secrets.example.h` 模板，实际地址找仓库所有者要
 
 固件只需要对接下面这一个接口。
 
 ## 设备接口约定
 
 ```
-GET https://lab.taplis.me/api/device/balance
+GET https://<服务器域名>/api/device/balance
 Authorization: Bearer dev_xxxxxxxxxxxxxxxx
 ```
 
 - 设备 Token 在 PWA「设置 → 设备 → 添加」里生成，**只显示一次**。配网时和 WiFi 一起填进设备，存在 NVS 里，不要写死在代码里。
 - 服务端会缓存余额 5 分钟，设备轮询间隔建议 **≥ 5 分钟**，更频繁也拿不到更新的数据。
-- 需要 HTTPS。开发阶段可以先用 `setInsecure()` 跑通，正式版要换成内置根证书校验（根证书以 `lab.taplis.me` 实际证书链为准，浏览器里点锁图标可以看到）。
+- 需要 HTTPS。开发阶段可以先用 `setInsecure()` 跑通，正式版要换成内置根证书校验（根证书以服务器实际证书链为准，浏览器里点锁图标可以看到）。
 
 ### 成功响应 `200`
 
@@ -51,4 +52,4 @@ Authorization: Bearer dev_xxxxxxxxxxxxxxxx
 
 ## 固件分发（待实现）
 
-GitHub Actions 编译 → 发布到 GitHub Release → Vercel 构建时下载到 `lab.taplis.me/firmware/`，网页烧录页和 OTA 都从这里取。详见根目录 `DEVELOPMENT_CHECKLIST.md`。
+GitHub Actions 编译 → 发布到 GitHub Release → Vercel 构建时下载到站点的 `/firmware/` 路径，网页烧录页和 OTA 都从这里取。详见根目录 `DEVELOPMENT_CHECKLIST.md`。

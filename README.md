@@ -1,14 +1,14 @@
 # esp32-balance
 
-两人协作的 **AI API 余额显示器**：ESP32 硬件负责轮询并显示余额，手机 PWA 负责登录、管理 API Key / 设备、查看余额。后端跑在 [lab.taplis.me](https://lab.taplis.me)，数据落在 MongoDB Atlas 的 `balance` 库。
+两人协作的 **AI API 余额显示器**：ESP32 硬件负责轮询并显示余额，手机 PWA 负责登录、管理 API Key / 设备、查看余额。后端部署在 Vercel（下文用 `<服务器域名>` 指代，实际地址找仓库所有者要），数据落在 MongoDB Atlas 的 `balance` 库。
 
 当前 Web 端 MVP 已就绪（共用密码登录、DeepSeek Key 加密存储、设备 Token、余额 5 分钟缓存、PWA）；固件与云端编译流水线待硬件侧推进。
 
 ## 架构
 
 ```
-ESP32 ──(设备 Token)──> lab.taplis.me/api/device/balance ──> 各家 AI 余额接口
-PWA   ──(登录)──────> lab.taplis.me/api/...  （管理 Key、设备、查看余额）
+ESP32 ──(设备 Token)──> <服务器域名>/api/device/balance ──> 各家 AI 余额接口
+PWA   ──(登录)──────> <服务器域名>/api/...  （管理 Key、设备、查看余额）
                               │
                         Atlas balance 库
 ```
@@ -24,7 +24,7 @@ PWA   ──(登录)──────> lab.taplis.me/api/...  （管理 Key、�
 ```
 esp32-balance/
 ├── firmware/              ← ESP32 固件（Arduino IDE，首块板 ESP32-WROOM-32）
-├── web/                   ← PWA + API（Next.js，部署到 lab.taplis.me）
+├── web/                   ← PWA + API（Next.js，部署在 Vercel）
 └── .github/workflows/     ← 云端编译固件（待实现）
 ```
 
@@ -59,10 +59,11 @@ npm run dev
 1. **Root Directory** = `web`
 2. 环境变量与 `.env.example` 一致（4 个）
 
-域名：`lab.taplis.me`（Cloudflare CNAME → Vercel）。
+域名：仓库所有者的子域名（Cloudflare CNAME → Vercel）。
 
 ## 协作约定
 
 - 不要提交任何 `.env*`、WiFi 密码、API Key、设备 Token（仓库公开，已开 GitHub Push Protection 兜底）
+- 也不要把服务器域名、数据库集群名、Vercel 项目链接写进仓库，文档里一律用 `<服务器域名>` 这类占位符；固件里的服务器地址放 `secrets.h`
 - 改动走 PR，由仓库所有者合并
 - 前端 / API 改 `web/`；固件改 `firmware/`，并遵守设备接口约定，避免擅自改响应字段

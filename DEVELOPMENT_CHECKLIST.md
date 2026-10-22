@@ -8,9 +8,9 @@
 - [ ] 仓库开启 Secret scanning + Push protection
 - [ ] 把合作者加为 Collaborator
 - [x] Vercel 项目 `esp32-balance`
-- [x] 子域名 `lab.taplis.me`（Cloudflare CNAME，DNS only / 灰色云朵）
-- [x] Atlas：在 `Cluster4Comments` 新建 `balance` 库 + `devices` 集合
-- [x] Atlas：专用用户 `esp32-balance`，只有 `readWrite@balance`
+- [x] 子域名（Cloudflare CNAME，DNS only / 灰色云朵）
+- [x] Atlas：在现有集群（与博客共用）新建 `balance` 库 + `devices` 集合
+- [x] Atlas：项目专用数据库用户，只有 `readWrite@balance`
 - [x] Vercel → Root Directory 改为 `web`（Framework Preset = Next.js）
 - [x] Vercel → 填写环境变量：`MONGODB_URI` / `APP_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY`
 

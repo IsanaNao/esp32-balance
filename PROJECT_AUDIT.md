@@ -6,10 +6,10 @@
 - **框架**: Next.js 16.1.6 (App Router)
 - **语言**: TypeScript 5
 - **样式**: Tailwind CSS v4
-- **数据库**: MongoDB Atlas（`Cluster4Comments` 集群，独立的 `balance` 库）+ Mongoose 8
+- **数据库**: MongoDB Atlas（与博客共用集群，独立的 `balance` 库）+ Mongoose 8
 - **认证**: jose 6（JWT，HS256）
 - **加密**: Node `crypto`（AES-256-GCM / SHA-256）
-- **部署**: Vercel Hobby，子域名 `lab.taplis.me`（Cloudflare DNS only）
+- **部署**: Vercel Hobby，仓库所有者的子域名（Cloudflare DNS only）
 - **固件**: Arduino IDE（Arduino-ESP32 core），首块硬件 ESP32-WROOM-32，屏幕待定
 
 ## 项目结构
@@ -143,5 +143,5 @@ PWA  ──Cookie──────────> /api/balance ──────
 
 ## 部署与域名
 - Vercel 项目 `esp32-balance`，Root Directory = `web`，推送 `main` 自动部署
-- 域名 `lab.taplis.me` → Cloudflare CNAME（DNS only），证书由 Vercel 自动签发
+- 域名：仓库所有者的子域名 → Cloudflare CNAME（DNS only），证书由 Vercel 自动签发
 - 固件计划放在同域名 `/firmware/` 下，不使用博客的 R2 图床
