@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession } from '@/lib/auth';
 import { generateDeviceToken, hashToken } from '@/lib/crypto';
+import { withDefaults } from '@/lib/deviceSettings';
 import connectDB from '@/lib/db';
 import { Device } from '@/models';
 
@@ -16,11 +17,12 @@ export async function GET(req: NextRequest) {
       name: d.name,
       createdAt: d.createdAt,
       lastSeenAt: d.lastSeenAt,
+      settings: withDefaults(d.settings),
     })),
   });
 }
 
-// 新建设备：token 只在这次响应里出现一次，数据库里只存哈希
+// 手动新建设备（调试用，正常流程走配对码）：token 只在这次响应里出现一次，数据库里只存哈希
 export async function POST(req: NextRequest) {
   const denied = await requireSession(req);
   if (denied) return denied;

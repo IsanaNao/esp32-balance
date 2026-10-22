@@ -46,3 +46,6 @@ firmware/**/credentials.h
 *.bin
 *.elf
 *.map
+
+# 发给合作者的手册（docx），可能填了私密信息，不进仓库
+handoff/
