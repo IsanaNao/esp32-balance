@@ -46,12 +46,21 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ error: message }, { status });
   }
 
-  await connectDB();
-  await ProviderKey.findOneAndUpdate(
-    { provider },
-    { key: encrypt(key), last4: key.slice(-4), cachedBalance: balance, cachedAt: new Date() },
-    { upsert: true },
-  );
+  try {
+    await connectDB();
+    await ProviderKey.findOneAndUpdate(
+      { provider },
+      { key: encrypt(key), last4: key.slice(-4), cachedBalance: balance, cachedAt: new Date() },
+      { upsert: true },
+    );
+  } catch (error) {
+    // 最常见的原因是 ENCRYPTION_KEY 格式不对，具体信息只写进 Vercel 日志
+    console.error('[PUT /api/keys]', error);
+    return NextResponse.json(
+      { error: '保存失败：服务器配置有误，请检查 ENCRYPTION_KEY 是否为 32 字节的 base64' },
+      { status: 500 },
+    );
+  }
   return NextResponse.json({ ok: true, last4: key.slice(-4) });
 }
 
