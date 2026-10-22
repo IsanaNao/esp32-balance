@@ -1,0 +1,238 @@
+
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <ArduinoJson.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+// ===== 填入你自己的信息 =====
+const char* WIFI_SSID = "wifi name 2.4g";
+const char* WIFI_PASSWORD = "your_wifi_password";
+const char* DEEPSEEK_API_KEY = "your_deepseek_api_key";
+// ============================
+
+const unsigned long CHECK_INTERVAL = 60000;
+unsigned long lastCheck = 0;
+
+struct Balance {
+  String currency;
+  String amount;
+  double value;
+};
+
+void showMessage(String line1, String line2 = "") {
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("DeepSeek Balance");
+  display.setCursor(0, 22);
+  display.println(line1);
+  display.setCursor(0, 36);
+  display.println(line2);
+  display.display();
+}
+
+// 按余额数字从大到小显示，最多显示4种
+void showBalances(Balance balances[], int count) {
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("DeepSeek Balance");
+  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+
+  if (count == 0) {
+    display.setCursor(0, 24);
+    display.println("No balance data");
+    display.display();
+    return;
+  }
+
+  int shown = count < 4 ? count : 4;
+
+  for (int i = 0; i < shown; i++) {
+    display.setCursor(0, 13 + i * 12);
+    display.print(i + 1);
+    display.print(". ");
+    display.print(balances[i].currency);
+    display.print(" ");
+    display.print(balances[i].amount);
+  }
+
+  display.display();
+}
+
+bool fetchBalance() {
+  if (WiFi.status() != WL_CONNECTED) {
+    showMessage("WiFi disconnected");
+    return false;
+  }
+
+  WiFiClientSecure client;
+
+  // 仅用于测试连接；正式产品应验证服务器证书
+  client.setInsecure();
+
+  HTTPClient https;
+  https.setTimeout(15000);
+
+  if (!https.begin(client, "https://api.deepseek.com/user/balance")) {
+    showMessage("HTTPS init failed");
+    return false;
+  }
+
+  https.addHeader(
+    "Authorization",
+    String("Bearer ") + DEEPSEEK_API_KEY
+  );
+  https.addHeader("Accept", "application/json");
+
+  int httpCode = https.GET();
+
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.printf("HTTP error: %d\n", httpCode);
+    showMessage("HTTP error", String(httpCode));
+    https.end();
+    return false;
+  }
+
+  String payload = https.getString();
+  https.end();
+
+  Serial.println("Balance response received");
+
+  // 解析 JSON
+  DynamicJsonDocument doc(4096);
+  DeserializationError error = deserializeJson(doc, payload);
+
+  if (error) {
+    Serial.print("JSON parse error: ");
+    Serial.println(error.c_str());
+    showMessage("JSON parse failed");
+    return false;
+  }
+
+  JsonArray infos = doc["balance_infos"].as<JsonArray>();
+
+  if (infos.isNull() || infos.size() == 0) {
+    showMessage("No balance data");
+    Serial.println(payload);
+    return false;
+  }
+
+  Balance balances[10];
+  int count = 0;
+
+  // 自动读取返回的每一种币种
+  for (JsonObject item : infos) {
+    if (count >= 10) break;
+
+    const char* currency = item["currency"] | "";
+    const char* amount = item["total_balance"] | "";
+
+    if (strlen(currency) == 0 || strlen(amount) == 0) {
+      continue;
+    }
+
+    char* endPtr;
+    double value = strtod(amount, &endPtr);
+
+    // 跳过无法识别的余额数字
+    if (endPtr == amount || *endPtr != '\0') {
+      continue;
+    }
+
+    balances[count].currency = currency;
+    balances[count].amount = amount;
+    balances[count].value = value;
+    count++;
+  }
+
+  if (count == 0) {
+    showMessage("No valid balances");
+    return false;
+  }
+
+  // 冒泡排序：余额数字从大到小
+  for (int i = 0; i < count - 1; i++) {
+    for (int j = 0; j < count - 1 - i; j++) {
+      if (balances[j].value < balances[j + 1].value) {
+        Balance temp = balances[j];
+        balances[j] = balances[j + 1];
+        balances[j + 1] = temp;
+      }
+    }
+  }
+
+  showBalances(balances, count);
+
+  Serial.println("Balances sorted:");
+  for (int i = 0; i < count; i++) {
+    Serial.print(balances[i].currency);
+    Serial.print(": ");
+    Serial.println(balances[i].amount);
+  }
+
+  return true;
+}
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin(21, 22);
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("OLED init failed");
+    while (true) delay(100);
+  }
+
+  showMessage("Connecting WiFi...");
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  unsigned long start = millis();
+
+  while (WiFi.status() != WL_CONNECTED &&
+         millis() - start < 25000) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    showMessage("WiFi failed", "Check SSID/password");
+    Serial.println("\nWiFi connection failed");
+    lastCheck = millis();
+    return;
+  }
+
+  Serial.println("\nWiFi connected");
+  Serial.println(WiFi.localIP());
+
+  showMessage("WiFi connected", "Getting balance...");
+  fetchBalance();
+
+  lastCheck = millis();
+}
+
+void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    WiFi.reconnect();
+    delay(1000);
+    return;
+  }
+
+  if (millis() - lastCheck >= CHECK_INTERVAL) {
+    lastCheck = millis();
+    fetchBalance();
+  }
+
+  delay(100);
+}
