@@ -53,6 +53,7 @@ function ProviderKeyCard({ provider, name }: { provider: string; name: string })
   const load = useCallback(async () => {
     const { ok, data } = await api(`/api/keys/${provider}`);
     if (ok) setStatus(data);
+    else setMessage('加载失败，请稍后重试');
   }, [provider]);
 
   useEffect(() => {
@@ -87,7 +88,7 @@ function ProviderKeyCard({ provider, name }: { provider: string; name: string })
       <h2 className="font-medium">{name} API Key</h2>
       <p className="text-sm text-muted">
         {status === null
-          ? '加载中…'
+          ? message || '加载中…'
           : status.configured
             ? `已配置（末 4 位 ${status.last4}）`
             : '未配置'}
@@ -110,7 +111,7 @@ function ProviderKeyCard({ provider, name }: { provider: string; name: string })
           </button>
         )}
       </div>
-      {message && <p className="text-sm text-muted">{message}</p>}
+      {message && status !== null && <p className="text-sm text-muted">{message}</p>}
     </section>
   );
 }
@@ -124,6 +125,7 @@ function DevicesCard() {
   const load = useCallback(async () => {
     const { ok, data } = await api('/api/devices');
     if (ok) setDevices(data.devices);
+    else setMessage('设备列表加载失败，请稍后重试');
   }, []);
 
   useEffect(() => {
