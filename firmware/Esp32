@@ -6,20 +6,48 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <ArduinoJson.h>
+#include <time.h>
+#include <stdlib.h>
+#include <string.h>
 
+// ==================== 用户配置 ====================
+
+// Wi-Fi 信息
+const char* WIFI_SSID = "你的WiFi名称";
+const char* WIFI_PASSWORD = "你的WiFi密码";
+
+// DeepSeek API Key
+const char* API_KEY = "你的DeepSeek_API_Key";
+
+// DeepSeek 余额接口
+const char* BALANCE_URL =
+    "https://api.deepseek.com/user/balance";
+
+// OLED 配置
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+#define OLED_SDA 21
+#define OLED_SCL 22
+#define OLED_ADDRESS 0x3C
 
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+// 刷新间隔
+const unsigned long WIFI_CHECK_INTERVAL = 10000;
+const unsigned long BALANCE_INTERVAL = 60000;
+const unsigned long WIFI_RETRY_INTERVAL = 10000;
 
-// ===== 填入你自己的信息 =====
-const char* WIFI_SSID = "wifi name 2.4g";
-const char* WIFI_PASSWORD = "your_wifi_password";
-const char* DEEPSEEK_API_KEY = "your_deepseek_api_key";
-// ============================
+// 中国标准时间 UTC+8
+const long GMT_OFFSET_SECONDS = 8 * 3600;
+const int DAYLIGHT_OFFSET_SECONDS = 0;
 
-const unsigned long CHECK_INTERVAL = 60000;
-unsigned long lastCheck = 0;
+// ==================================================
+
+Adafruit_SSD1306 display(
+    SCREEN_WIDTH,
+    SCREEN_HEIGHT,
+    &Wire,
+    OLED_RESET
+);
 
 struct Balance {
   String currency;
@@ -27,114 +55,168 @@ struct Balance {
   double value;
 };
 
-void showMessage(String line1, String line2 = "") {
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-  display.setTextSize(1);
-  display.setCursor(0, 0);
-  display.println("DeepSeek Balance");
-  display.setCursor(0, 22);
-  display.println(line1);
-  display.setCursor(0, 36);
-  display.println(line2);
-  display.display();
+Balance balances[10];
+int balanceCount = 0;
+
+bool hasValidBalance = false;
+bool wasConnected = false;
+
+unsigned long lastWiFiCheck = 0;
+unsigned long lastBalanceCheck = 0;
+unsigned long lastWiFiRetry = 0;
+
+String lastUpdateTime = "--:--";
+String currentStatus = "Starting";
+
+// 获取北京时间，只显示小时和分钟
+String getBeijingTime() {
+  struct tm timeInfo;
+
+  if (!getLocalTime(&timeInfo, 1000)) {
+    return "--:--";
+  }
+
+  char buffer[6];
+  strftime(buffer, sizeof(buffer), "%H:%M", &timeInfo);
+
+  return String(buffer);
 }
 
-// 按余额数字从大到小显示，最多显示4种
-void showBalances(Balance balances[], int count) {
+// OLED 显示余额和更新时间
+void showBalances() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
   display.setCursor(0, 0);
+
   display.println("DeepSeek Balance");
   display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
 
-  if (count == 0) {
-    display.setCursor(0, 24);
-    display.println("No balance data");
+  if (!hasValidBalance) {
+    display.setCursor(0, 20);
+    display.println("Waiting for balance...");
+    display.setCursor(0, 36);
+
+    if (WiFi.status() == WL_CONNECTED) {
+      display.println("Connecting API...");
+    } else {
+      display.println("Waiting for WiFi");
+    }
+
     display.display();
     return;
   }
 
-  int shown = count < 4 ? count : 4;
+  // 最多显示 3 个币种，为底部更新时间留出空间
+  int shown = balanceCount;
+  if (shown > 3) {
+    shown = 3;
+  }
 
   for (int i = 0; i < shown; i++) {
-    display.setCursor(0, 13 + i * 12);
-    display.print(i + 1);
-    display.print(". ");
+    display.setCursor(0, 14 + i * 11);
     display.print(balances[i].currency);
     display.print(" ");
     display.print(balances[i].amount);
   }
 
+  // 只显示一行更新时间，不显示秒，也不显示状态行
+  display.setCursor(0, 53);
+  display.print("Update ");
+  display.print(lastUpdateTime);
+
   display.display();
 }
 
+// 按余额数值从高到低排序
+void sortBalances() {
+  for (int i = 0; i < balanceCount - 1; i++) {
+    for (int j = i + 1; j < balanceCount; j++) {
+      if (balances[j].value > balances[i].value) {
+        Balance temp = balances[i];
+        balances[i] = balances[j];
+        balances[j] = temp;
+      }
+    }
+  }
+}
+
+// 请求 DeepSeek 余额
 bool fetchBalance() {
   if (WiFi.status() != WL_CONNECTED) {
-    showMessage("WiFi disconnected");
+    currentStatus = "WiFi offline";
+    showBalances();
     return false;
   }
 
   WiFiClientSecure client;
 
-  // 仅用于测试连接；正式产品应验证服务器证书
+  // 仅用于测试：跳过服务器证书验证。
+  // 正式使用建议配置并验证服务器 CA 证书。
   client.setInsecure();
 
-  HTTPClient https;
-  https.setTimeout(15000);
+  HTTPClient http;
+  http.setTimeout(15000);
 
-  if (!https.begin(client, "https://api.deepseek.com/user/balance")) {
-    showMessage("HTTPS init failed");
+  if (!http.begin(client, BALANCE_URL)) {
+    currentStatus = "HTTP init failed";
+    showBalances();
     return false;
   }
 
-  https.addHeader(
-    "Authorization",
-    String("Bearer ") + DEEPSEEK_API_KEY
+  http.addHeader("Accept", "application/json");
+  http.addHeader(
+      "Authorization",
+      String("Bearer ") + API_KEY
   );
-  https.addHeader("Accept", "application/json");
 
-  int httpCode = https.GET();
+  int httpCode = http.GET();
 
   if (httpCode != HTTP_CODE_OK) {
-    Serial.printf("HTTP error: %d\n", httpCode);
-    showMessage("HTTP error", String(httpCode));
-    https.end();
+    Serial.print("HTTP error: ");
+    Serial.println(httpCode);
+
+    http.end();
+    currentStatus = "Update failed";
+    showBalances();
     return false;
   }
 
-  String payload = https.getString();
-  https.end();
+  String payload = http.getString();
+  http.end();
 
-  Serial.println("Balance response received");
+  Serial.println("Balance API response:");
+  Serial.println(payload);
 
-  // 解析 JSON
-  DynamicJsonDocument doc(4096);
+  JsonDocument doc;
   DeserializationError error = deserializeJson(doc, payload);
 
   if (error) {
-    Serial.print("JSON parse error: ");
+    Serial.print("JSON parse failed: ");
     Serial.println(error.c_str());
-    showMessage("JSON parse failed");
+
+    currentStatus = "JSON error";
+    showBalances();
     return false;
   }
 
   JsonArray infos = doc["balance_infos"].as<JsonArray>();
 
-  if (infos.isNull() || infos.size() == 0) {
-    showMessage("No balance data");
-    Serial.println(payload);
+  if (infos.isNull()) {
+    currentStatus = "No balance data";
+    showBalances();
     return false;
   }
 
-  Balance balances[10];
-  int count = 0;
+  Balance newBalances[10];
+  int newCount = 0;
 
-  // 自动读取返回的每一种币种
   for (JsonObject item : infos) {
-    if (count >= 10) break;
+    if (newCount >= 10) {
+      break;
+    }
 
+    // 余额接口通常将 total_balance 返回为字符串
     const char* currency = item["currency"] | "";
     const char* amount = item["total_balance"] | "";
 
@@ -142,97 +224,148 @@ bool fetchBalance() {
       continue;
     }
 
-    char* endPtr;
+    char* endPtr = nullptr;
     double value = strtod(amount, &endPtr);
 
-    // 跳过无法识别的余额数字
     if (endPtr == amount || *endPtr != '\0') {
+      Serial.print("Invalid balance amount: ");
+      Serial.println(amount);
       continue;
     }
 
-    balances[count].currency = currency;
-    balances[count].amount = amount;
-    balances[count].value = value;
-    count++;
+    newBalances[newCount].currency = String(currency);
+    newBalances[newCount].amount = String(amount);
+    newBalances[newCount].value = value;
+
+    newCount++;
   }
 
-  if (count == 0) {
-    showMessage("No valid balances");
+  if (newCount == 0) {
+    currentStatus = "No valid balance";
+    showBalances();
     return false;
   }
 
-  // 冒泡排序：余额数字从大到小
-  for (int i = 0; i < count - 1; i++) {
-    for (int j = 0; j < count - 1 - i; j++) {
-      if (balances[j].value < balances[j + 1].value) {
-        Balance temp = balances[j];
-        balances[j] = balances[j + 1];
-        balances[j + 1] = temp;
-      }
-    }
+  // 用本次成功获取的数据替换旧数据
+  balanceCount = newCount;
+
+  for (int i = 0; i < balanceCount; i++) {
+    balances[i] = newBalances[i];
   }
 
-  showBalances(balances, count);
+  // 排序
+  sortBalances();
 
-  Serial.println("Balances sorted:");
-  for (int i = 0; i < count; i++) {
-    Serial.print(balances[i].currency);
-    Serial.print(": ");
-    Serial.println(balances[i].amount);
-  }
+  hasValidBalance = true;
+  lastUpdateTime = getBeijingTime();
+  currentStatus = "Updated";
+
+  Serial.println("Balance updated successfully.");
+  Serial.print("Beijing update time: ");
+  Serial.println(lastUpdateTime);
+
+  showBalances();
 
   return true;
 }
 
-void setup() {
-  Serial.begin(115200);
-  Wire.begin(21, 22);
-
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println("OLED init failed");
-    while (true) delay(100);
-  }
-
-  showMessage("Connecting WiFi...");
+// 连接 Wi-Fi
+void connectWiFi() {
+  Serial.println("Connecting to WiFi...");
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  unsigned long start = millis();
-
-  while (WiFi.status() != WL_CONNECTED &&
-         millis() - start < 25000) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  if (WiFi.status() != WL_CONNECTED) {
-    showMessage("WiFi failed", "Check SSID/password");
-    Serial.println("\nWiFi connection failed");
-    lastCheck = millis();
-    return;
-  }
-
-  Serial.println("\nWiFi connected");
-  Serial.println(WiFi.localIP());
-
-  showMessage("WiFi connected", "Getting balance...");
-  fetchBalance();
-
-  lastCheck = millis();
+  lastWiFiRetry = millis();
 }
 
-void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    WiFi.reconnect();
-    delay(1000);
-    return;
+// 初始化
+void setup() {
+  Serial.begin(115200);
+  delay(300);
+
+  // 初始化 OLED
+  Wire.begin(OLED_SDA, OLED_SCL);
+
+  if (!display.begin(
+          SSD1306_SWITCHCAPVCC,
+          OLED_ADDRESS)) {
+    Serial.println("OLED initialization failed!");
+
+    while (true) {
+      delay(1000);
+    }
   }
 
-  if (millis() - lastCheck >= CHECK_INTERVAL) {
-    lastCheck = millis();
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("DeepSeek Balance");
+  display.println("Starting...");
+  display.display();
+
+  // 配置中国北京时间
+  configTime(
+      GMT_OFFSET_SECONDS,
+      DAYLIGHT_OFFSET_SECONDS,
+      "ntp.aliyun.com",
+      "pool.ntp.org",
+      "time.google.com"
+  );
+
+  // 启动 Wi-Fi
+  connectWiFi();
+
+  // 初始化定时器
+  lastWiFiCheck = millis();
+  lastBalanceCheck = millis();
+
+  showBalances();
+}
+
+// 主循环
+void loop() {
+  unsigned long now = millis();
+
+  // 每 10 秒检查 Wi-Fi 状态
+  if (now - lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
+    lastWiFiCheck = now;
+
+    bool connected = WiFi.status() == WL_CONNECTED;
+
+    // 首次连接成功，或断网后恢复连接
+    if (connected && !wasConnected) {
+      Serial.println("WiFi connected.");
+
+      wasConnected = true;
+
+      // 让余额刷新任务立即执行
+      lastBalanceCheck = now - BALANCE_INTERVAL;
+    }
+
+    // 检测到 Wi-Fi 断开
+    if (!connected && wasConnected) {
+      Serial.println("WiFi disconnected.");
+
+      wasConnected = false;
+      currentStatus = "WiFi offline";
+      showBalances();
+    }
+  }
+
+  // Wi-Fi 断开时，每 10 秒尝试重新连接
+  if (WiFi.status() != WL_CONNECTED &&
+      now - lastWiFiRetry >= WIFI_RETRY_INTERVAL) {
+    connectWiFi();
+  }
+
+  // 联网后每 60 秒更新余额
+  if (WiFi.status() == WL_CONNECTED &&
+      now - lastBalanceCheck >= BALANCE_INTERVAL) {
+    lastBalanceCheck = now;
     fetchBalance();
   }
 
-  delay(100);
+  delay(20);
 }
