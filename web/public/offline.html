@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Balance · 离线</title>
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+        font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: #f6f6f4; color: #171717; text-align: center; padding: 16px; }
+      @media (prefers-color-scheme: dark) { body { background: #0e0e0f; color: #ededed; } }
+      p { color: #888; }
+    </style>
+  </head>
+  <body>
+    <div>
+      <h1>当前离线</h1>
+      <p>余额需要联网才能查看，恢复网络后会自动刷新。</p>
+    </div>
+    <script>window.addEventListener('online', () => location.reload());</script>
+  </body>
+</html>

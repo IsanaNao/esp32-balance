@@ -1,0 +1,46 @@
+# ===== 通用 =====
+.DS_Store
+Thumbs.db
+*.log
+*.pem
+
+# 本地环境变量（API Key、数据库连接串、密码）绝对不能提交
+.env*
+!.env.example
+
+# 编辑器
+.vscode/*
+!.vscode/extensions.json
+.idea/
+**/.claude/
+
+# AI 生成的分析报告（和博客习惯一致，只留在本地）
+.analysis/
+
+# ===== web/（Next.js）=====
+web/node_modules/
+web/.next/
+web/out/
+web/build/
+web/coverage/
+web/.vercel/
+web/*.tsbuildinfo
+web/next-env.d.ts
+
+# 构建时从 GitHub Release 下载的固件，不进仓库
+web/public/firmware/
+
+# ===== firmware/（ESP32，框架待定，先把常见的都排除）=====
+# PlatformIO
+firmware/.pio/
+# ESP-IDF
+firmware/build/
+firmware/sdkconfig.old
+firmware/managed_components/
+# 本地 WiFi / 调试用的私密配置
+firmware/**/secrets.h
+firmware/**/credentials.h
+# 编译产物
+*.bin
+*.elf
+*.map
