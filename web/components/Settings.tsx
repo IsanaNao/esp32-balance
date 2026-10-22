@@ -2,23 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import DevicesCard from './DevicesCard';
+import { api, button, input } from './ui';
 
 type KeyStatus = { configured: boolean; last4: string | null; updatedAt: string | null };
-type Device = { id: string; name: string; createdAt: string; lastSeenAt: string | null };
-
-const input =
-  'w-full rounded-lg border border-border bg-background px-3 py-2 outline-none focus:border-accent';
-const button = 'rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50';
-
-async function api(url: string, init?: RequestInit) {
-  const res = await fetch(url, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
-  }).catch(() => null);
-  if (res?.status === 401) location.href = '/login';
-  const data = await res?.json().catch(() => null);
-  return { ok: !!res?.ok, data };
-}
 
 export default function Settings() {
   return (
@@ -121,102 +108,3 @@ function ProviderKeyCard({ provider, name }: { provider: string; name: string })
   );
 }
 
-function DevicesCard() {
-  const [devices, setDevices] = useState<Device[] | null>(null);
-  const [name, setName] = useState('');
-  const [newToken, setNewToken] = useState<{ name: string; token: string } | null>(null);
-  const [message, setMessage] = useState('');
-
-  const load = useCallback(async () => {
-    const { ok, data } = await api('/api/devices');
-    if (ok) setDevices(data.devices);
-    else setMessage('设备列表加载失败，请稍后重试');
-  }, []);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load();
-  }, [load]);
-
-  async function create() {
-    setMessage('');
-    const { ok, data } = await api('/api/devices', {
-      method: 'POST',
-      body: JSON.stringify({ name }),
-    });
-    if (!ok) {
-      setMessage(data?.error ?? '创建失败');
-      return;
-    }
-    setNewToken({ name: data.name, token: data.token });
-    setName('');
-    load();
-  }
-
-  async function remove(d: Device) {
-    if (!confirm(`删除「${d.name}」后，这台设备将无法再获取余额。确定？`)) return;
-    await api(`/api/devices/${d.id}`, { method: 'DELETE' });
-    load();
-  }
-
-  return (
-    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
-      <h2 className="font-medium">设备</h2>
-
-      {newToken && (
-        <div className="rounded-lg border border-accent p-3 text-sm">
-          <p className="mb-2">
-            「{newToken.name}」的设备 Token，<strong>只显示这一次</strong>，请在设备配网时填入：
-          </p>
-          <code className="block break-all rounded bg-background p-2 font-mono text-xs">
-            {newToken.token}
-          </code>
-          <div className="mt-2 flex gap-2">
-            <button
-              onClick={() => navigator.clipboard?.writeText(newToken.token)}
-              className={button}
-            >
-              复制
-            </button>
-            <button onClick={() => setNewToken(null)} className={button}>
-              我已保存
-            </button>
-          </div>
-        </div>
-      )}
-
-      <ul className="flex flex-col divide-y divide-border">
-        {devices?.length === 0 && <li className="py-2 text-sm text-muted">还没有设备</li>}
-        {devices?.map((d) => (
-          <li key={d.id} className="flex items-center justify-between py-2">
-            <div>
-              <p>{d.name}</p>
-              <p className="text-xs text-muted">
-                {d.lastSeenAt
-                  ? `最后在线 ${new Date(d.lastSeenAt).toLocaleString('zh-CN')}`
-                  : '从未连接'}
-              </p>
-            </div>
-            <button onClick={() => remove(d)} className={`${button} text-danger`}>
-              删除
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      <div className="flex gap-2">
-        <input
-          placeholder="设备名称，比如 书桌"
-          maxLength={40}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className={input}
-        />
-        <button onClick={create} disabled={!name.trim()} className={`${button} shrink-0`}>
-          添加
-        </button>
-      </div>
-      {message && <p className="text-sm text-danger">{message}</p>}
-    </section>
-  );
-}

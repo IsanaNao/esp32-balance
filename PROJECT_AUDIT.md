@@ -36,21 +36,29 @@ web/
   │       ├── auth/logout/route.ts      # 登出（POST）
   │       ├── balance/route.ts          # PWA 查询余额（GET；?refresh=1 强制刷新）
   │       ├── keys/[provider]/route.ts  # 服务商 Key（GET 状态 / PUT 保存 / DELETE）
-  │       ├── devices/route.ts          # 设备列表（GET）/ 新建（POST，返回一次性 Token）
-  │       ├── devices/[id]/route.ts     # 删除设备 = 吊销 Token（DELETE）
-  │       └── device/balance/route.ts   # ESP32 专用（GET；Bearer 设备 Token）
+  │       ├── devices/route.ts          # 设备列表（GET）/ 手动新建（POST，调试用，返回一次性 Token）
+  │       ├── devices/[id]/route.ts     # 改名称 / 设置（PATCH）、删除 = 吊销 Token（DELETE）
+  │       ├── devices/claim/route.ts    # PWA 输入 6 位配对码认领设备（POST）
+  │       ├── device/pair/start/route.ts # 设备申请配对码（POST；无鉴权，按 IP 限 5 个）
+  │       ├── device/pair/poll/route.ts  # 设备轮询配对结果，认领后一次性拿到 Token（POST；Bearer pair_）
+  │       └── device/balance/route.ts   # ESP32 专用：余额 + cfg 设置（GET；Bearer 设备 Token）
   ├── components/
   │   ├── Dashboard.tsx              # 余额卡片
-  │   ├── Settings.tsx               # Key 管理 + 设备管理
+  │   ├── Settings.tsx               # Key 管理
+  │   ├── DevicesCard.tsx            # 设备：配对表单、设置面板、手动 Token（折叠）
+  │   ├── ui.ts                      # 设置页共用样式 + 请求封装
   │   └── ServiceWorkerRegister.tsx  # 仅生产环境注册 SW
   ├── lib/
   │   ├── auth.ts          # 会话签发 / 校验、requireSession、requirePageSession
-  │   ├── crypto.ts        # Key 加解密、设备 Token 生成与哈希
+  │   ├── crypto.ts        # Key 加解密、设备 Token / 配对密钥 / 配对码生成与哈希
   │   ├── db.ts            # Mongoose 连接缓存
   │   ├── providers.ts     # 服务商适配层（目前只有 DeepSeek）
   │   ├── balance.ts       # 余额聚合 + 缓存策略
+  │   ├── deviceSettings.ts # 设备设置的默认值与校验
+  │   ├── configError.ts   # 环境变量错误（可安全显示变量名）
+  │   ├── bearer.ts        # 解析 Authorization: Bearer
   │   └── getClientIp.ts   # 取客户端 IP（限流用）
-  ├── models/index.ts      # ProviderKey / Device / LoginAttempt
+  ├── models/index.ts      # ProviderKey / Device / LoginAttempt / PairingRequest
   └── public/
       ├── sw.js            # 最小 Service Worker
       └── offline.html     # 离线提示页
@@ -79,6 +87,9 @@ web/
 - 设备 Token：`dev_` + 24 字节随机数（base64url），只在创建时返回一次
 - 数据库只存 SHA-256 哈希；删除设备即吊销
 - 设备每次请求更新 `lastSeenAt`，在设置页显示「最后在线」
+- **配对**：设备 `pair/start` 拿到 6 位码（屏幕显示）+ `pair_` 密钥（只存哈希）→ 用户在 PWA 输入码认领 → 设备 `pair/poll` 时原子地删除配对请求并生成 Token，Token 只返回一次；配对请求 10 分钟 TTL，同一 IP 最多挂 5 个
+- **设置下发**：刷新间隔（≥ 300 秒）、亮度、旋转、币种筛选存在 `Device.settings`，每次修改 `settingsVersion + 1`；设备从 `/api/device/balance` 的 `cfg` 取回，`items` 已在服务端按币种筛选
+- 不做「手机经局域网直连设备」：HTTPS 页面访问设备的 HTTP 地址会被浏览器当作混合内容拦截（iOS 一律拦截），所以只有 WiFi 配网走设备热点（WiFiManager），其余全部经服务器
 
 ### 5. PWA
 - `display: standalone`，支持 Android 安装和 iOS 添加到主屏幕
@@ -93,17 +104,21 @@ web/
 | POST | `/api/auth/logout` | 无 | 清除 Cookie |
 | GET | `/api/balance` | 会话 | `?refresh=1` 强制刷新 |
 | GET / PUT / DELETE | `/api/keys/[provider]` | 会话 | PUT `{ apiKey }` |
-| GET / POST | `/api/devices` | 会话 | POST `{ name }` → `{ id, name, token }` |
-| DELETE | `/api/devices/[id]` | 会话 | |
-| GET | `/api/device/balance` | 设备 Token | 格式见 `firmware/README.md` |
+| GET / POST | `/api/devices` | 会话 | POST `{ name }` → `{ id, name, token }`（调试用） |
+| PATCH / DELETE | `/api/devices/[id]` | 会话 | PATCH `{ name?, settings? }` |
+| POST | `/api/devices/claim` | 会话 | `{ code, name }` |
+| POST | `/api/device/pair/start` | 无（按 IP 限流） | → `{ code, secret, expiresIn, poll }` |
+| POST | `/api/device/pair/poll` | 配对密钥 | → `pending` / `paired` + token / `expired` |
+| GET | `/api/device/balance` | 设备 Token | 余额 + `cfg`，格式见 `firmware/README.md` |
 
 ## 数据模型（`balance` 库）
 
 | 集合 | 字段 | 说明 |
 |---|---|---|
 | `providerkeys` | provider, key{iv,tag,data}, last4, cachedBalance, cachedAt | provider 唯一 |
-| `devices` | name, tokenHash, lastSeenAt | tokenHash 唯一 |
+| `devices` | name, tokenHash, lastSeenAt, settings{refreshSec,brightness,flip,currency}, settingsVersion | tokenHash 唯一 |
 | `loginattempts` | ip, createdAt | 24 小时 TTL |
+| `pairingrequests` | code, secretHash, ip, claimed, name, createdAt | code / secretHash 唯一，10 分钟 TTL |
 
 > 注：Atlas 里手动建的 `devices` 集合会被 Mongoose 直接复用；其余集合首次写入时自动创建。
 

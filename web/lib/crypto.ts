@@ -1,5 +1,5 @@
 import 'server-only';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt } from 'crypto';
 import { ConfigError } from './configError';
 
 // AI 服务商的 API Key 用 AES-256-GCM 加密后才写进数据库
@@ -46,4 +46,14 @@ export function hashToken(token: string): string {
 
 export function generateDeviceToken(): string {
   return `dev_${randomBytes(24).toString('base64url')}`;
+}
+
+// 配对期间设备用来轮询的临时密钥，配对完成即作废
+export function generatePairSecret(): string {
+  return `pair_${randomBytes(24).toString('base64url')}`;
+}
+
+// 6 位数字配对码，用 randomInt 保证均匀分布
+export function generatePairCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
 }

@@ -25,16 +25,28 @@
 - [x] PWA：manifest、图标、Service Worker、离线页
 - [x] 线上部署后：登录 → 填 Key → 看到余额（端到端验证，2026-10-22）
 - [ ] 手机安装测试：Android Chrome、iOS Safari「添加到主屏幕」（手机浏览器显示已验证，安装待测）
-- [ ] 用 curl 模拟设备请求，确认格式和 401 行为
+- [x] 用脚本模拟设备请求，确认格式和 401 行为（配对 + 设置下发 15 项本地端到端测试，2026-10-22）
+
+## 阶段 1.5：配对 + 设置下发（服务端）
+
+- [x] 配对码流程：`/api/device/pair/start` → PWA 输入 6 位码（`/api/devices/claim`）→ `/api/device/pair/poll` 拿 Token
+- [x] 设备设置：刷新间隔、亮度、旋转、币种筛选，PWA 编辑（`PATCH /api/devices/[id]`）
+- [x] `/api/device/balance` 增加 `cfg` 字段，`items` 按币种设置在服务端筛选
+- [x] PWA 设置页：配对表单 + 设备设置面板；手动 Token 收进「固件调试用」折叠区
+- [x] `firmware/README.md` 更新接口约定；《固件对接手册》docx 交给合作者
+- [ ] 线上实机验证：设备配对 → 改设置 → 设备生效
 
 ## 阶段 2：固件（Arduino IDE + ESP32-WROOM-32）
 
 - [x] 确定框架：**Arduino IDE**（Arduino-ESP32 core），合作者本地用 IDE，云端用同一个 core 的 `arduino-cli` 编译，保证结果一致
 - [x] 确定首块硬件：**ESP32-WROOM-32**（经典 ESP32，FQBN `esp32:esp32:esp32`）
-- [ ] 确定屏幕型号
-- [ ] 在 `firmware/` 初始化 Arduino 工程（`.ino` 与文件夹同名，Arduino IDE 可直接打开）
-- [ ] 配网：设备开热点（captive portal）填写 WiFi + 设备 Token，存 NVS
-- [ ] 轮询 `/api/device/balance`（≥ 5 分钟），401 / 超时处理按 `firmware/README.md`
+- [x] 确定屏幕型号：0.96" SSD1306 128×64 I²C OLED（SDA 21 / SCL 22 / 0x3C）
+- [x] 原型：直连 DeepSeek 显示余额（`firmware/Esp32`，已验证屏幕和网络）
+- [ ] 改为 Arduino 工程结构（`firmware/balance_display/balance_display.ino`）+ `secrets.h` / `secrets.example.h`
+- [ ] 去掉固件里的 DeepSeek Key，改为请求 `/api/device/balance`
+- [ ] 配网：WiFiManager 热点配 WiFi，存 NVS
+- [ ] 配对：屏幕显示 6 位配对码，轮询拿 Token 存 NVS；401 时清 Token 重新配对
+- [ ] 应用 `cfg`：刷新间隔、亮度、旋转
 - [ ] HTTPS 根证书校验（替换开发期的 `setInsecure()`）
 - [ ] 屏幕显示：余额、币种、更新时间、离线 / 旧数据标记
 
