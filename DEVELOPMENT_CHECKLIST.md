@@ -23,8 +23,8 @@
 - [x] 设备管理：生成 / 吊销设备 Token（只存哈希）
 - [x] 设备接口 `/api/device/balance`
 - [x] PWA：manifest、图标、Service Worker、离线页
-- [ ] 线上部署后：登录 → 填 Key → 看到余额（端到端验证）
-- [ ] 手机安装测试：Android Chrome、iOS Safari「添加到主屏幕」
+- [x] 线上部署后：登录 → 填 Key → 看到余额（端到端验证，2026-10-22）
+- [ ] 手机安装测试：Android Chrome、iOS Safari「添加到主屏幕」（手机浏览器显示已验证，安装待测）
 - [ ] 用 curl 模拟设备请求，确认格式和 401 行为
 
 ## 阶段 2：固件（等硬件负责人定框架和硬件）
