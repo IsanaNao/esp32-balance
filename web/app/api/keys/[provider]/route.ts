@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession } from '@/lib/auth';
 import { encrypt } from '@/lib/crypto';
+import { configErrorMessage } from '@/lib/configError';
 import { providers, ProviderError } from '@/lib/providers';
 import connectDB from '@/lib/db';
 import { ProviderKey } from '@/models';
@@ -54,10 +55,10 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
       { upsert: true },
     );
   } catch (error) {
-    // 最常见的原因是 ENCRYPTION_KEY 格式不对，具体信息只写进 Vercel 日志
+    // 最常见的原因是 ENCRYPTION_KEY 格式不对；其他错误的细节只写进 Vercel 日志
     console.error('[PUT /api/keys]', error);
     return NextResponse.json(
-      { error: '保存失败：服务器配置有误，请检查 ENCRYPTION_KEY 是否为 32 字节的 base64' },
+      { error: configErrorMessage(error) ?? '保存失败，请查看 Vercel 日志' },
       { status: 500 },
     );
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSession, passwordMatches, setSessionCookie } from '@/lib/auth';
 import { getClientIp } from '@/lib/getClientIp';
+import { configErrorMessage } from '@/lib/configError';
 import connectDB from '@/lib/db';
 import { LoginAttempt } from '@/models';
 
@@ -32,10 +33,10 @@ export async function POST(req: NextRequest) {
     setSessionCookie(res, await createSession());
     return res;
   } catch (error) {
-    // 具体原因（比如环境变量缺失）只写进 Vercel 日志，不返回给前端
+    // 环境变量问题直接告诉前端是哪个变量；其他错误的细节只写进 Vercel 日志
     console.error('[POST /api/auth/login]', error);
     return NextResponse.json(
-      { error: '服务器出错，请查看 Vercel 日志（多半是环境变量没配好）' },
+      { error: configErrorMessage(error) ?? '服务器出错，请查看 Vercel 日志' },
       { status: 500 },
     );
   }

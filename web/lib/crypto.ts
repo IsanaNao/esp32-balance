@@ -1,14 +1,18 @@
 import 'server-only';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
+import { ConfigError } from './configError';
 
 // AI 服务商的 API Key 用 AES-256-GCM 加密后才写进数据库
 // ENCRYPTION_KEY 是 32 字节随机数的 base64，生成方法见 README
 
 function getKey(): Buffer {
   const raw = process.env.ENCRYPTION_KEY;
-  const key = raw ? Buffer.from(raw, 'base64') : null;
-  if (!key || key.length !== 32) {
-    throw new Error('缺少环境变量 ENCRYPTION_KEY（32 字节的 base64）');
+  if (!raw) throw new ConfigError('没有读到环境变量 ENCRYPTION_KEY');
+  const key = Buffer.from(raw, 'base64');
+  if (key.length !== 32) {
+    throw new ConfigError(
+      `ENCRYPTION_KEY 解码后是 ${key.length} 字节，需要正好 32 字节，请用 README 里的命令重新生成`,
+    );
   }
   return key;
 }

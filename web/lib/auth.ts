@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { SignJWT, jwtVerify } from 'jose';
 import { createHash, timingSafeEqual } from 'crypto';
+import { ConfigError } from './configError';
 
 // 初版：两人共用一个密码（APP_PASSWORD），登录后签发 JWT 存在 HttpOnly Cookie
 // 以后做用户池时，在 payload 里加上用户 id 即可，调用方不用改
@@ -13,8 +14,9 @@ const SESSION_DAYS = 30;
 
 function getSecretKey() {
   const secret = process.env.JWT_SECRET;
-  if (!secret || secret.length < 32) {
-    throw new Error('缺少环境变量 JWT_SECRET（至少 32 个字符）');
+  if (!secret) throw new ConfigError('没有读到环境变量 JWT_SECRET');
+  if (secret.length < 32) {
+    throw new ConfigError(`JWT_SECRET 只有 ${secret.length} 个字符，至少需要 32 个`);
   }
   return new TextEncoder().encode(secret);
 }

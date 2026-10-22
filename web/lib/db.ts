@@ -1,5 +1,6 @@
 import 'server-only';
 import mongoose from 'mongoose';
+import { ConfigError } from './configError';
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
@@ -12,7 +13,7 @@ globalForMongoose.mongoose = cached;
 
 export default async function connectDB() {
   if (!MONGODB_URI) {
-    throw new Error('缺少环境变量 MONGODB_URI');
+    throw new ConfigError('没有读到环境变量 MONGODB_URI');
   }
 
   if (cached.conn) return cached.conn;
