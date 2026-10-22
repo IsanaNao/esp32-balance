@@ -23,7 +23,7 @@ PWA   ──(登录)──────> lab.taplis.me/api/...  （管理 Key、�
 
 ```
 esp32-balance/
-├── firmware/              ← ESP32 固件（PlatformIO，框架/硬件待定）
+├── firmware/              ← ESP32 固件（Arduino IDE，首块板 ESP32-WROOM-32）
 ├── web/                   ← PWA + API（Next.js，部署到 lab.taplis.me）
 └── .github/workflows/     ← 云端编译固件（待实现）
 ```

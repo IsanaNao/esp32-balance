@@ -10,7 +10,7 @@
 - **认证**: jose 6（JWT，HS256）
 - **加密**: Node `crypto`（AES-256-GCM / SHA-256）
 - **部署**: Vercel Hobby，子域名 `lab.taplis.me`（Cloudflare DNS only）
-- **固件**: 待定
+- **固件**: Arduino IDE（Arduino-ESP32 core），首块硬件 ESP32-WROOM-32，屏幕待定
 
 ## 项目结构
 ```

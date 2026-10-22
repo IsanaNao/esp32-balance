@@ -1,8 +1,13 @@
 # firmware/
 
-ESP32 固件目录。**框架和硬件还没定**（PlatformIO + Arduino 或 ESP-IDF，由硬件负责人决定），定下来后在这里初始化工程。
+ESP32 固件目录。
 
-不管用哪种框架，固件只需要对接下面这一个接口。
+- **开发环境**：Arduino IDE（Arduino-ESP32 core）。云端 CI 用同一个 core 的 `arduino-cli` 编译，和本地 IDE 结果一致
+- **首块硬件**：ESP32-WROOM-32（Arduino IDE 里选 **ESP32 Dev Module**，FQBN `esp32:esp32:esp32`）
+- **屏幕**：待定
+- 工程结构按 Arduino IDE 规则：`.ino` 文件与所在文件夹同名，例如 `firmware/balance_display/balance_display.ino`；WiFi 密码等私密配置放 `secrets.h`（已被 .gitignore 排除）
+
+固件只需要对接下面这一个接口。
 
 ## 设备接口约定
 
