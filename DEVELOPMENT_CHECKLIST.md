@@ -11,8 +11,8 @@
 - [x] 子域名 `lab.taplis.me`（Cloudflare CNAME，DNS only / 灰色云朵）
 - [x] Atlas：在 `Cluster4Comments` 新建 `balance` 库 + `devices` 集合
 - [x] Atlas：专用用户 `esp32-balance`，只有 `readWrite@balance`
-- [ ] Vercel → Root Directory 改为 `web`
-- [ ] Vercel → 填写环境变量：`MONGODB_URI` / `APP_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY`
+- [x] Vercel → Root Directory 改为 `web`（Framework Preset = Next.js）
+- [x] Vercel → 填写环境变量：`MONGODB_URI` / `APP_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY`
 
 ## 阶段 1：Web 端 MVP（DeepSeek）
 
