@@ -6,11 +6,11 @@
 - **框架**: Next.js 16.1.6 (App Router)
 - **语言**: TypeScript 5
 - **样式**: Tailwind CSS v4
-- **数据库**: MongoDB Atlas（`Cluster4Comments` 集群，独立的 `balance` 库）+ Mongoose 8
+- **数据库**: MongoDB Atlas（与博客共用集群，独立的 `balance` 库）+ Mongoose 8
 - **认证**: jose 6（JWT，HS256）
 - **加密**: Node `crypto`（AES-256-GCM / SHA-256）
-- **部署**: Vercel Hobby，子域名 `lab.taplis.me`（Cloudflare DNS only）
-- **固件**: 待定
+- **部署**: Vercel Hobby，仓库所有者的子域名（Cloudflare DNS only）
+- **固件**: Arduino IDE（Arduino-ESP32 core），首块硬件 ESP32-WROOM-32，屏幕待定
 
 ## 项目结构
 ```
@@ -71,6 +71,7 @@ web/
 
 ### 3. 余额查询与缓存
 - Vercel Hobby 的 Cron 一天只能跑一次，所以**不做后台轮询**，按需拉取
+- 首页隐藏余额为 0 的币种（全为 0 时仍显示）
 - 缓存放在 `ProviderKey.cachedBalance`：PWA 默认 5 分钟、手动刷新 30 秒下限；设备 5 分钟
 - 拉取失败时返回旧缓存并标记 `stale`，前端 / 设备可以提示
 
@@ -131,6 +132,8 @@ PWA  ──Cookie──────────> /api/balance ──────
 - 设备接口没有单独限流：只有持有有效 Token 才会访问数据库之外的资源，且余额有 5 分钟缓存，暂时可接受
 - 登录限流按 IP 计数，同一出口 IP 的两人会共享次数
 - PWA 图标是占位图
+- Vercel 函数默认跑在 iad1（华盛顿），冷启动约 3 秒；建议把 Function Region 改到 Atlas 所在地区
+- 设置页的 API Key 输入框故意用 type="text"，避免浏览器把 Key 当密码保存同步
 - 固件、CI、网页烧录均未开始
 
 ## 开发规范
@@ -140,5 +143,5 @@ PWA  ──Cookie──────────> /api/balance ──────
 
 ## 部署与域名
 - Vercel 项目 `esp32-balance`，Root Directory = `web`，推送 `main` 自动部署
-- 域名 `lab.taplis.me` → Cloudflare CNAME（DNS only），证书由 Vercel 自动签发
+- 域名：仓库所有者的子域名 → Cloudflare CNAME（DNS only），证书由 Vercel 自动签发
 - 固件计划放在同域名 `/firmware/` 下，不使用博客的 R2 图床

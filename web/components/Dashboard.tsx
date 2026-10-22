@@ -15,6 +15,12 @@ type Balance = {
 
 const SYMBOL: Record<string, string> = { CNY: '¥', USD: '$' };
 
+// 只充了一种货币时，另一种总是 0，没必要占一行；全是 0 时保留，提示该充值了
+function visibleItems(items: Balance['items']) {
+  const nonZero = items.filter((i) => i.total !== 0);
+  return nonZero.length > 0 ? nonZero : items;
+}
+
 export default function Dashboard() {
   const [balances, setBalances] = useState<Balance[] | null>(null);
   const [error, setError] = useState('');
@@ -81,7 +87,7 @@ export default function Dashboard() {
             </span>
           </div>
 
-          {b.items.map((i) => (
+          {visibleItems(b.items).map((i) => (
             <div key={i.currency} className="mt-3">
               <p className="font-mono text-3xl font-semibold tabular-nums">
                 {SYMBOL[i.currency] ?? ''}

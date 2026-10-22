@@ -93,9 +93,14 @@ function ProviderKeyCard({ provider, name }: { provider: string; name: string })
             ? `已配置（末 4 位 ${status.last4}）`
             : '未配置'}
       </p>
+      {/* 故意不用 type="password"：否则浏览器会把 API Key 当成登录密码提示保存并同步到云端 */}
       <input
-        type="password"
+        type="text"
         autoComplete="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        data-1p-ignore
+        data-lpignore="true"
         placeholder={status?.configured ? '填写新 Key 以替换' : 'sk-...'}
         value={apiKey}
         onChange={(e) => setApiKey(e.target.value)}

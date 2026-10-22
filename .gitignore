@@ -30,7 +30,9 @@ web/next-env.d.ts
 # 构建时从 GitHub Release 下载的固件，不进仓库
 web/public/firmware/
 
-# ===== firmware/（ESP32，框架待定，先把常见的都排除）=====
+# ===== firmware/（Arduino IDE；保留 PlatformIO / ESP-IDF 规则以防以后换框架）=====
+# arduino-cli 编译输出
+firmware/**/build/
 # PlatformIO
 firmware/.pio/
 # ESP-IDF
