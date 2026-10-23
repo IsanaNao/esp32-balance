@@ -2,77 +2,119 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <WiFiManager.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <ArduinoJson.h>
 #include <time.h>
 #include <stdlib.h>
-#include <string.h>
 
-// ==================== 用户配置 ====================
-
-// Wi-Fi 信息
-const char* WIFI_SSID = "你的WiFi名称";
-const char* WIFI_PASSWORD = "你的WiFi密码";
-
-// DeepSeek API Key
-const char* API_KEY = "你的DeepSeek_API_Key";
-
-// DeepSeek 余额接口
-const char* BALANCE_URL =
-    "https://api.deepseek.com/user/balance";
-
-// OLED 配置
+// ==================== OLED 设置 ====================
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
-#define OLED_SDA 21
-#define OLED_SCL 22
-#define OLED_ADDRESS 0x3C
-
-// 刷新间隔
-const unsigned long WIFI_CHECK_INTERVAL = 10000;
-const unsigned long BALANCE_INTERVAL = 60000;
-const unsigned long WIFI_RETRY_INTERVAL = 10000;
-
-// 中国标准时间 UTC+8
-const long GMT_OFFSET_SECONDS = 8 * 3600;
-const int DAYLIGHT_OFFSET_SECONDS = 0;
-
-// ==================================================
+#define OLED_ADDR 0x3C
 
 Adafruit_SSD1306 display(
-    SCREEN_WIDTH,
-    SCREEN_HEIGHT,
-    &Wire,
-    OLED_RESET
+  SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET
 );
 
-struct Balance {
+// ==================== Wi-Fi 配网设置 ====================
+const char* AP_NAME = "DeepSeek-Setup";
+const char* AP_PASSWORD = "DSsetup88";
+
+// ==================== DeepSeek API 设置 ====================
+// 请将这里替换成你自己的 DeepSeek API Key
+const char* API_KEY = "请在这里填写你的DeepSeek_API_Key";
+
+const char* API_URL =
+  "https://api.deepseek.com/user/balance";
+
+// ==================== 定时设置 ====================
+const unsigned long BALANCE_REFRESH_INTERVAL = 30000UL;
+const unsigned long WIFI_CHECK_INTERVAL = 10000UL;
+const unsigned long WIFI_RETRY_INTERVAL = 10000UL;
+const unsigned long WIFI_TIMEOUT_MS = 60000UL;
+
+// ==================== 余额数据 ====================
+struct BalanceItem {
   String currency;
-  String amount;
-  double value;
+  double total;
 };
 
-Balance balances[10];
+BalanceItem balances[10];
 int balanceCount = 0;
 
-bool hasValidBalance = false;
-bool wasConnected = false;
-
-unsigned long lastWiFiCheck = 0;
-unsigned long lastBalanceCheck = 0;
-unsigned long lastWiFiRetry = 0;
+bool hasBalanceData = false;
+bool apiError = false;
 
 String lastUpdateTime = "--:--";
-String currentStatus = "Starting";
 
-// 获取北京时间，只显示小时和分钟
+unsigned long lastBalanceRefresh = 0;
+unsigned long lastWiFiCheck = 0;
+unsigned long lastWiFiRetry = 0;
+
+bool disconnectedTracking = false;
+unsigned long disconnectedSince = 0;
+
+// ==================== OLED 基础提示 ====================
+void showMessage(const String& line1, const String& line2) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setCursor(0, 15);
+  display.println(line1);
+
+  display.setCursor(0, 30);
+  display.println(line2);
+
+  display.display();
+}
+
+// ==================== OLED 配网界面 ====================
+// 初次配网和断网 60 秒后的配网共用此界面
+void showWiFiConfig() {
+  String ip = WiFi.softAPIP().toString();
+
+  if (ip == "0.0.0.0") {
+    ip = "192.168.4.1";
+  }
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setCursor(0, 0);
+  display.println("WiFi Setup");
+
+  display.setCursor(0, 10);
+  display.println("WiFi Not Connected");
+
+  display.setCursor(0, 20);
+  display.print("SSID: ");
+  display.println(AP_NAME);
+
+  display.setCursor(0, 30);
+  display.print("PASS: ");
+  display.println(AP_PASSWORD);
+
+  display.setCursor(0, 40);
+  display.print("IP: ");
+  display.println(ip);
+
+  display.setCursor(0, 52);
+  display.println("Open IP to config");
+
+  display.display();
+}
+
+// ==================== 北京时间 ====================
 String getBeijingTime() {
   struct tm timeInfo;
 
-  if (!getLocalTime(&timeInfo, 1000)) {
+  if (!getLocalTime(&timeInfo, 100)) {
     return "--:--";
   }
 
@@ -82,290 +124,416 @@ String getBeijingTime() {
   return String(buffer);
 }
 
-// OLED 显示余额和更新时间
+// ==================== OLED 余额显示 ====================
 void showBalances() {
   display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
   display.setCursor(0, 0);
-
   display.println("DeepSeek Balance");
-  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
 
-  if (!hasValidBalance) {
-    display.setCursor(0, 20);
+  if (!hasBalanceData) {
+    display.setCursor(0, 17);
     display.println("Waiting for balance...");
-    display.setCursor(0, 36);
 
-    if (WiFi.status() == WL_CONNECTED) {
-      display.println("Connecting API...");
+    display.setCursor(0, 30);
+
+    if (apiError) {
+      display.println("API Error");
     } else {
-      display.println("Waiting for WiFi");
+      display.println("Connecting API...");
+    }
+  } else {
+    int rows = balanceCount < 3 ? balanceCount : 3;
+
+    for (int i = 0; i < rows; i++) {
+      display.setCursor(0, 13 + i * 12);
+      display.print(balances[i].currency);
+      display.print(": ");
+      display.print(balances[i].total, 2);
     }
 
-    display.display();
-    return;
+    if (apiError) {
+      display.setCursor(0, 49);
+      display.print("API Error");
+    }
   }
 
-  // 最多显示 3 个币种，为底部更新时间留出空间
-  int shown = balanceCount;
-  if (shown > 3) {
-    shown = 3;
-  }
+  display.setCursor(0, 56);
+  display.print("Update time ");
 
-  for (int i = 0; i < shown; i++) {
-    display.setCursor(0, 14 + i * 11);
-    display.print(balances[i].currency);
-    display.print(" ");
-    display.print(balances[i].amount);
-  }
+  String currentTime = getBeijingTime();
 
-  // 只显示一行更新时间，不显示秒，也不显示状态行
-  display.setCursor(0, 53);
-  display.print("Update ");
-  display.print(lastUpdateTime);
+  if (currentTime != "--:--") {
+    display.print(currentTime);
+  } else {
+    display.print(lastUpdateTime);
+  }
 
   display.display();
 }
 
-// 按余额数值从高到低排序
+// ==================== 配网门户回调 ====================
+void configModeCallback(WiFiManager* myWiFiManager) {
+  Serial.println("WiFi configuration portal started");
+  Serial.print("AP SSID: ");
+  Serial.println(AP_NAME);
+  Serial.print("AP IP: ");
+  Serial.println(WiFi.softAPIP());
+
+  showWiFiConfig();
+}
+
+// ==================== 配网页面设置 ====================
+void configurePortal(WiFiManager& wm) {
+  wm.setDebugOutput(true);
+
+  // 最多尝试连接已保存的 Wi-Fi 60 秒
+  wm.setConnectTimeout(60);
+
+  // 配网门户不自动超时关闭
+  wm.setConfigPortalTimeout(0);
+
+  // 保留 WiFiManager 的 Wi-Fi 配置和退出菜单
+  wm.setMenu({"wifi", "exit"}, 2);
+
+  wm.setTitle("DeepSeek WiFi Setup");
+
+  wm.setCustomHeadElement(
+    "<meta name='viewport' "
+    "content='width=device-width, initial-scale=1'>"
+  );
+
+  wm.setAPCallback(configModeCallback);
+}
+
+// ==================== 余额排序 ====================
 void sortBalances() {
   for (int i = 0; i < balanceCount - 1; i++) {
-    for (int j = i + 1; j < balanceCount; j++) {
-      if (balances[j].value > balances[i].value) {
-        Balance temp = balances[i];
-        balances[i] = balances[j];
-        balances[j] = temp;
+    for (int j = 0; j < balanceCount - i - 1; j++) {
+      if (balances[j].total < balances[j + 1].total) {
+        BalanceItem temp = balances[j];
+        balances[j] = balances[j + 1];
+        balances[j + 1] = temp;
       }
     }
   }
 }
 
-// 请求 DeepSeek 余额
+// ==================== 获取 DeepSeek 余额 ====================
 bool fetchBalance() {
   if (WiFi.status() != WL_CONNECTED) {
-    currentStatus = "WiFi offline";
-    showBalances();
+    Serial.println("WiFi disconnected; skip API request");
     return false;
   }
 
   WiFiClientSecure client;
-
-  // 仅用于测试：跳过服务器证书验证。
-  // 正式使用建议配置并验证服务器 CA 证书。
   client.setInsecure();
 
-  HTTPClient http;
-  http.setTimeout(15000);
+  HTTPClient https;
+  https.setTimeout(10000);
 
-  if (!http.begin(client, BALANCE_URL)) {
-    currentStatus = "HTTP init failed";
+  if (!https.begin(client, API_URL)) {
+    Serial.println("Unable to start HTTPS request");
+    apiError = true;
     showBalances();
     return false;
   }
 
-  http.addHeader("Accept", "application/json");
-  http.addHeader(
-      "Authorization",
-      String("Bearer ") + API_KEY
+  https.addHeader("Accept", "application/json");
+  https.addHeader(
+    "Authorization",
+    String("Bearer ") + API_KEY
   );
 
-  int httpCode = http.GET();
+  int httpCode = https.GET();
+
+  Serial.print("HTTP code: ");
+  Serial.println(httpCode);
 
   if (httpCode != HTTP_CODE_OK) {
-    Serial.print("HTTP error: ");
-    Serial.println(httpCode);
+    Serial.println("DeepSeek API request failed");
+    Serial.println(https.getString());
 
-    http.end();
-    currentStatus = "Update failed";
+    https.end();
+
+    apiError = true;
     showBalances();
     return false;
   }
 
-  String payload = http.getString();
-  http.end();
-
-  Serial.println("Balance API response:");
-  Serial.println(payload);
+  String payload = https.getString();
+  https.end();
 
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, payload);
 
   if (error) {
-    Serial.print("JSON parse failed: ");
+    Serial.print("JSON error: ");
     Serial.println(error.c_str());
 
-    currentStatus = "JSON error";
+    apiError = true;
     showBalances();
     return false;
   }
 
-  JsonArray infos = doc["balance_infos"].as<JsonArray>();
+  JsonArray infoArray = doc["balance_infos"].as<JsonArray>();
 
-  if (infos.isNull()) {
-    currentStatus = "No balance data";
+  if (infoArray.isNull()) {
+    Serial.println("Missing balance_infos in response");
+    apiError = true;
     showBalances();
     return false;
   }
 
-  Balance newBalances[10];
+  BalanceItem newBalances[10];
   int newCount = 0;
 
-  for (JsonObject item : infos) {
+  for (JsonObject item : infoArray) {
     if (newCount >= 10) {
       break;
     }
 
-    // 余额接口通常将 total_balance 返回为字符串
     const char* currency = item["currency"] | "";
-    const char* amount = item["total_balance"] | "";
 
-    if (strlen(currency) == 0 || strlen(amount) == 0) {
+    if (strlen(currency) == 0) {
       continue;
     }
 
-    char* endPtr = nullptr;
-    double value = strtod(amount, &endPtr);
+    JsonVariant totalValue = item["total_balance"];
 
-    if (endPtr == amount || *endPtr != '\0') {
-      Serial.print("Invalid balance amount: ");
-      Serial.println(amount);
+    double total = 0.0;
+
+    if (totalValue.is<const char*>()) {
+      total = atof(totalValue.as<const char*>());
+    } else if (!totalValue.isNull()) {
+      total = totalValue.as<double>();
+    } else {
       continue;
     }
 
     newBalances[newCount].currency = String(currency);
-    newBalances[newCount].amount = String(amount);
-    newBalances[newCount].value = value;
-
+    newBalances[newCount].total = total;
     newCount++;
   }
 
   if (newCount == 0) {
-    currentStatus = "No valid balance";
+    Serial.println("No valid balance records found");
+    apiError = true;
     showBalances();
     return false;
   }
 
-  // 用本次成功获取的数据替换旧数据
+  // 只有获取到有效的新数据才覆盖旧余额
   balanceCount = newCount;
 
-  for (int i = 0; i < balanceCount; i++) {
+  for (int i = 0; i < newCount; i++) {
     balances[i] = newBalances[i];
   }
 
-  // 排序
   sortBalances();
 
-  hasValidBalance = true;
-  lastUpdateTime = getBeijingTime();
-  currentStatus = "Updated";
+  hasBalanceData = true;
+  apiError = false;
 
-  Serial.println("Balance updated successfully.");
-  Serial.print("Beijing update time: ");
-  Serial.println(lastUpdateTime);
+  String now = getBeijingTime();
+
+  if (now != "--:--") {
+    lastUpdateTime = now;
+  }
+
+  Serial.println("Balance updated successfully");
 
   showBalances();
-
   return true;
 }
 
-// 连接 Wi-Fi
-void connectWiFi() {
-  Serial.println("Connecting to WiFi...");
-
+// ==================== 初次连接 Wi-Fi ====================
+bool setupWiFi() {
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.setAutoReconnect(true);
 
-  lastWiFiRetry = millis();
+  WiFiManager wm;
+  configurePortal(wm);
+
+  showMessage("Connecting WiFi...", "Please wait");
+
+  // 有已保存的 Wi-Fi 时先尝试连接；
+  // 连接失败后，WiFiManager 会启动配网热点和网页
+  bool connected = wm.autoConnect(AP_NAME, AP_PASSWORD);
+
+  if (connected && WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi connected");
+    Serial.println(WiFi.localIP());
+
+    return true;
+  }
+
+  // 用户退出配网页面或连接失败后，
+  // 后续由 loop() 继续尝试配网
+  showWiFiConfig();
+  return false;
 }
 
-// 初始化
+// ==================== 断网 60 秒后重新配网 ====================
+void enterConfigPortal() {
+  Serial.println("WiFi disconnected for 60 seconds");
+  Serial.println("Starting WiFi configuration portal");
+
+  // 先在 OLED 上显示热点名称、密码和 IP
+  WiFi.mode(WIFI_AP_STA);
+
+  showWiFiConfig();
+
+  WiFiManager wm;
+  configurePortal(wm);
+
+  // 启动热点及配网页面。
+  // 配网门户没有自动关闭时间限制。
+  bool connected = wm.startConfigPortal(
+    AP_NAME,
+    AP_PASSWORD
+  );
+
+  if (connected && WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi reconnected");
+
+    disconnectedTracking = false;
+    disconnectedSince = 0;
+
+    lastWiFiRetry = millis();
+
+    // 尽快刷新余额
+    lastBalanceRefresh = millis();
+
+    showMessage("WiFi Connected", "Updating balance...");
+
+    fetchBalance();
+
+    lastBalanceRefresh = millis();
+  } else {
+    // 如果用户退出页面或连接失败，
+    // 保留配网提示，loop() 会继续尝试
+    showWiFiConfig();
+
+    disconnectedTracking = true;
+    disconnectedSince = millis() - WIFI_TIMEOUT_MS;
+  }
+}
+
+// ==================== 初始化 ====================
 void setup() {
   Serial.begin(115200);
-  delay(300);
 
-  // 初始化 OLED
-  Wire.begin(OLED_SDA, OLED_SCL);
+  Wire.begin(21, 22);
 
-  if (!display.begin(
-          SSD1306_SWITCHCAPVCC,
-          OLED_ADDRESS)) {
-    Serial.println("OLED initialization failed!");
-
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    Serial.println("OLED initialization failed");
     while (true) {
       delay(1000);
     }
   }
 
   display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-  display.setTextSize(1);
-  display.setCursor(0, 0);
-  display.println("DeepSeek Balance");
-  display.println("Starting...");
   display.display();
 
-  // 配置中国北京时间
-  configTime(
-      GMT_OFFSET_SECONDS,
-      DAYLIGHT_OFFSET_SECONDS,
-      "ntp.aliyun.com",
-      "pool.ntp.org",
-      "time.google.com"
+  // 首次配网与运行中重新配网使用同一套配置
+  while (WiFi.status() != WL_CONNECTED) {
+    bool connected = setupWiFi();
+
+    if (connected) {
+      break;
+    }
+
+    delay(1000);
+  }
+
+  // 北京时间 UTC+8
+  configTzTime(
+    "CST-8",
+    "ntp.aliyun.com",
+    "pool.ntp.org",
+    "time.google.com"
   );
 
-  // 启动 Wi-Fi
-  connectWiFi();
+  struct tm timeInfo;
 
-  // 初始化定时器
-  lastWiFiCheck = millis();
-  lastBalanceCheck = millis();
+  // 等待 NTP 同步，最多 10 秒
+  getLocalTime(&timeInfo, 10000);
 
-  showBalances();
+  showMessage("Connecting API...", "Please wait");
+
+  fetchBalance();
+
+  unsigned long now = millis();
+
+  lastBalanceRefresh = now;
+  lastWiFiCheck = now;
+  lastWiFiRetry = now;
+
+  disconnectedTracking = false;
 }
 
-// 主循环
+// ==================== 主循环 ====================
 void loop() {
   unsigned long now = millis();
 
-  // 每 10 秒检查 Wi-Fi 状态
+  // 每 10 秒检查一次 Wi-Fi 状态
   if (now - lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
     lastWiFiCheck = now;
 
-    bool connected = WiFi.status() == WL_CONNECTED;
+    if (WiFi.status() == WL_CONNECTED) {
+      // 网络恢复
+      if (disconnectedTracking) {
+        Serial.println("WiFi connection restored");
 
-    // 首次连接成功，或断网后恢复连接
-    if (connected && !wasConnected) {
-      Serial.println("WiFi connected.");
+        disconnectedTracking = false;
+        disconnectedSince = 0;
 
-      wasConnected = true;
+        // 尽快重新获取余额
+        lastBalanceRefresh =
+          now - BALANCE_REFRESH_INTERVAL;
+      }
+    } else {
+      // 记录断网开始时间
+      if (!disconnectedTracking) {
+        disconnectedTracking = true;
+        disconnectedSince = now;
 
-      // 让余额刷新任务立即执行
-      lastBalanceCheck = now - BALANCE_INTERVAL;
-    }
-
-    // 检测到 Wi-Fi 断开
-    if (!connected && wasConnected) {
-      Serial.println("WiFi disconnected.");
-
-      wasConnected = false;
-      currentStatus = "WiFi offline";
-      showBalances();
+        Serial.println("WiFi disconnected");
+      }
     }
   }
 
-  // Wi-Fi 断开时，每 10 秒尝试重新连接
-  if (WiFi.status() != WL_CONNECTED &&
-      now - lastWiFiRetry >= WIFI_RETRY_INTERVAL) {
-    connectWiFi();
+  // 断网期间，每 10 秒尝试一次恢复连接
+  if (WiFi.status() != WL_CONNECTED) {
+    if (now - lastWiFiRetry >= WIFI_RETRY_INTERVAL) {
+      lastWiFiRetry = now;
+
+      Serial.println("Retrying WiFi connection...");
+
+      WiFi.reconnect();
+    }
+
+    // 断网满 60 秒，启动配网门户
+    if (disconnectedTracking &&
+        now - disconnectedSince >= WIFI_TIMEOUT_MS) {
+      enterConfigPortal();
+
+      return;
+    }
+
+    delay(10);
+    return;
   }
 
-  // 联网后每 60 秒更新余额
-  if (WiFi.status() == WL_CONNECTED &&
-      now - lastBalanceCheck >= BALANCE_INTERVAL) {
-    lastBalanceCheck = now;
+  // 联网状态下，每 30 秒刷新余额
+  if (now - lastBalanceRefresh >= BALANCE_REFRESH_INTERVAL) {
+    lastBalanceRefresh = now;
+
     fetchBalance();
   }
 
-  delay(20);
+  delay(10);
 }
