@@ -44,7 +44,7 @@
 - [x] 原型：直连 DeepSeek 显示余额（`firmware/Esp32`，已验证屏幕和网络）
 - [ ] 改为 Arduino 工程结构（`firmware/balance_display/balance_display.ino`）+ `secrets.h` / `secrets.example.h`
 - [ ] 去掉固件里的 DeepSeek Key，改为请求 `/api/device/balance`
-- [ ] 配网：WiFiManager 热点配 WiFi，存 NVS
+- [x] 配网：WiFiManager 热点配 WiFi，存 NVS（ver 0.2，2026-10-23；待改：断网后配网门户不超时会卡住、热点名改为 Balance-XXXX）
 - [ ] 配对：屏幕显示 6 位配对码，轮询拿 Token 存 NVS；401 时清 Token 重新配对
 - [ ] 应用 `cfg`：刷新间隔、亮度、旋转
 - [ ] HTTPS 根证书校验（替换开发期的 `setInsecure()`）
